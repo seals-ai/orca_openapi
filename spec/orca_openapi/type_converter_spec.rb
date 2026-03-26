@@ -7,24 +7,17 @@ require 'spec_helper'
 # - T::Enum constants must be assigned to real constants
 module TypeConverterTestFixtures
   class SimpleSchema < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :id, String
   end
 
   class ItemSchema < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :name, String
   end
 
   class OptionalSchema < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :value, String
   end
 
-  # Plain T::Struct without OrcaOpenAPI::Schema — should also get $ref
   class PlainStruct < T::Struct
     const :name, String
   end
@@ -190,7 +183,7 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
       end
     end
 
-    context 'with T::Struct classes (with OrcaOpenAPI::Schema)' do
+    context 'with T::Struct classes' do
       it 'returns a $ref to the schema component' do
         result = described_class.convert(TypeConverterTestFixtures::SimpleSchema)
 
@@ -200,7 +193,7 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
       end
     end
 
-    context 'with plain T::Struct classes (without OrcaOpenAPI::Schema)' do
+    context 'with plain T::Struct classes' do
       it 'returns a $ref to the schema component' do
         result = described_class.convert(TypeConverterTestFixtures::PlainStruct)
 

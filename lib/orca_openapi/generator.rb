@@ -7,8 +7,8 @@ module OrcaOpenAPI
   #   - Registered controllers with typed_action declarations
   #   - Route information (path + HTTP method per action)
   #
-  # Supports both plain T::Struct subclasses and those that include OrcaOpenAPI::Schema.
-  # Metadata (description, format, example) is read directly from T::Struct prop kwargs.
+  # Metadata (description, format, example) is read from T::Struct field_metadata,
+  # which is automatically available via OrcaOpenAPI::StructExtension.
   #
   # Usage:
   #   spec = OrcaOpenAPI::Generator.new.generate
@@ -271,7 +271,7 @@ module OrcaOpenAPI
     # Generates an OpenAPI 3.1 schema hash for a T::Struct class.
     # If the class defines a custom `to_openapi_schema`, delegates to it.
     # Otherwise, introspects T::Struct props directly and reads metadata
-    # from field_metadata (when OrcaOpenAPI::Schema is included).
+    # from field_metadata (available on all T::Struct via StructExtension).
     def struct_to_openapi_schema(klass)
       # Delegate to custom to_openapi_schema if the class defines one
       # (e.g. oneOf wrappers that include OrcaOpenAPI::Schema)
@@ -285,7 +285,7 @@ module OrcaOpenAPI
         type_object = prop_info[:type_object] || prop_info[:type]
         schema = TypeConverter.convert(type_object)
 
-        # Read metadata from field_metadata (populated by OrcaOpenAPI::Schema's const override)
+        # Read metadata from field_metadata (populated by StructExtension's const override)
         meta = metadata[prop_name] || {}
         schema[:description] = meta[:description] if meta[:description]
         schema[:format] = meta[:format] if meta[:format]
@@ -327,7 +327,7 @@ module OrcaOpenAPI
     end
 
     # Derives the OpenAPI component name for a T::Struct class.
-    # Delegates to `openapi_name` if available (via OrcaOpenAPI::Schema),
+    # Delegates to `openapi_name` if available (via StructExtension),
     # otherwise derives from the class name.
     def openapi_name_for(klass)
       if klass.respond_to?(:openapi_name)

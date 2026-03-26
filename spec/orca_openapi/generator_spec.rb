@@ -9,22 +9,16 @@ require 'tmpdir'
 
 module GeneratorTestFixtures
   class LineItem < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :product_id, String, description: 'Product ID'
     const :quantity, Integer
   end
 
   class OrderRequest < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :customer_id, String, description: 'Customer UUID', format: 'uuid'
     const :items, T::Array[LineItem], description: 'Order line items'
   end
 
   class OrderResponse < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :id, String, description: 'Order ID', format: 'uuid'
     const :status, String
     const :items, T::Array[LineItem]
@@ -32,22 +26,16 @@ module GeneratorTestFixtures
   end
 
   class ErrorResponse < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :error, String, description: 'Error message'
     const :code, T.nilable(Integer), description: 'Error code'
   end
 
   class ListResponse < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :orders, T::Array[OrderResponse]
     const :total, Integer
   end
 
   class QueryParams < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :page, T.nilable(Integer), description: 'Page number'
     const :per_page, T.nilable(Integer), description: 'Items per page'
     const :status, T.nilable(String), description: 'Filter by status'

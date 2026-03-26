@@ -130,7 +130,7 @@ module OrcaOpenAPI
       end
 
       # Derives an OpenAPI schema name from a class.
-      # Delegates to `openapi_name` if available (e.g. via OrcaOpenAPI::Schema),
+      # Delegates to `openapi_name` if available (via StructExtension),
       # otherwise derives from the class name.
       #   Llm::V1::Products::PricesResponse → "llm_v1_products_prices_response"
       def schema_name(klass)

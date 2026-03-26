@@ -12,33 +12,24 @@ module PricesEndpointFixtures
   # -- Request schemas (oneOf pattern) --
 
   class PricesByCustomer < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :customer_id, String, description: 'Customer UUID', format: 'uuid'
     const :product_ids, T::Array[String], description: 'Product UUIDs'
   end
 
   class PricesByOrganization < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :organization_id, String, description: 'Organization UUID', format: 'uuid'
     const :product_ids, T::Array[String], description: 'Product UUIDs'
   end
 
   class PricesByPerson < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :person_id, String, description: 'Person UUID', format: 'uuid'
     const :product_ids, T::Array[String], description: 'Product UUIDs'
   end
 
   # Wrapper that aggregates the three variants into oneOf.
-  # OrcaOpenAPI::Schema#to_openapi_schema is designed for object schemas,
-  # so we manually define the oneOf envelope for now.
+  # Defines a custom to_openapi_schema for the oneOf envelope.
   # In a future version, the gem could support a `one_of` DSL directly.
   class PricesRequest < T::Struct
-    include OrcaOpenAPI::Schema
-
     class << self
       def to_openapi_schema
         {
@@ -60,8 +51,6 @@ module PricesEndpointFixtures
   # -- Response schemas --
 
   class ProductPrice < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :id, String, description: 'Product UUID', format: 'uuid'
     const :price, T.nilable(Float), description: 'List price'
     const :price_cents, T.nilable(Integer), description: 'List price in cents'
@@ -74,14 +63,10 @@ module PricesEndpointFixtures
   end
 
   class PricesResponse < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :products, T::Array[ProductPrice], description: 'Product prices'
   end
 
   class ErrorResponse < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :error, String, description: 'Error message'
   end
 

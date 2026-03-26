@@ -6,35 +6,25 @@ require 'spec_helper'
 
 module ControllerTestFixtures
   class CreateRequest < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :name, String, description: 'Item name'
     const :quantity, Integer
   end
 
   class CreateResponse < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :id, String, description: 'Created item ID'
     const :name, String
   end
 
   class ErrorResponse < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :error, String, description: 'Error message'
   end
 
   class IndexResponse < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :items, T::Array[CreateResponse]
     const :total, Integer
   end
 
   class QueryParams < T::Struct
-    include OrcaOpenAPI::Schema
-
     const :page, T.nilable(Integer), description: 'Page number'
     const :per_page, T.nilable(Integer), description: 'Items per page'
   end
