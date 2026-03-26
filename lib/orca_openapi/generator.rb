@@ -179,13 +179,22 @@ module OrcaOpenAPI
       params
     end
 
-    def build_request_body(schema_class)
+    def build_request_body(params_schema)
+      schema = if params_schema.is_a?(Array)
+                 # Array of T::Struct classes → inline oneOf with $ref to each variant
+                 {
+                   'oneOf' => params_schema.map do |klass|
+                     { '$ref' => "#/components/schemas/#{openapi_name_for(klass)}" }
+                   end
+                 }
+               else
+                 { '$ref' => "#/components/schemas/#{openapi_name_for(params_schema)}" }
+               end
+
       {
         'required' => true,
         'content' => {
-          'application/json' => {
-            'schema' => { '$ref' => "#/components/schemas/#{openapi_name_for(schema_class)}" }
-          }
+          'application/json' => { 'schema' => schema }
         }
       }
     end
@@ -239,7 +248,11 @@ module OrcaOpenAPI
         next unless controller_class.respond_to?(:typed_actions)
 
         controller_class.typed_actions.each_value do |action_meta|
-          queue << action_meta.params_schema if action_meta.params_schema
+          if action_meta.params_schema.is_a?(Array)
+            action_meta.params_schema.each { |klass| queue << klass }
+          elsif action_meta.params_schema
+            queue << action_meta.params_schema
+          end
           queue << action_meta.query_params if action_meta.query_params
 
           action_meta.response_schemas.each_value do |schema_class|

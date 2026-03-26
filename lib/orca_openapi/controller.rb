@@ -53,7 +53,8 @@ module OrcaOpenAPI
       # @param description [String, nil] Longer description
       # @param tags [Array<String>, String, nil] OpenAPI tags (defaults to controller-level tags)
       # @param security [Array, Symbol, nil] Security override for this action
-      # @param params [Class<OrcaOpenAPI::Schema>, nil] Request body schema class
+      # @param params [Class<T::Struct>, Array<Class<T::Struct>>, nil] Request body schema class,
+      #   or an array of T::Struct classes to produce an inline oneOf envelope
       # @param response [Hash{Integer => Class<OrcaOpenAPI::Schema>}] Response schemas by status code
       # @param path_params [Hash, nil] Path parameter definitions
       # @param query_params [Class<OrcaOpenAPI::Schema>, nil] Query parameter schema

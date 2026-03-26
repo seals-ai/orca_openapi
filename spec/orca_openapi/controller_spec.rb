@@ -154,6 +154,21 @@ RSpec.describe OrcaOpenAPI::Controller do
       expect(controller.typed_actions[:create].params_schema).to eq(ControllerTestFixtures::CreateRequest)
     end
 
+    it 'stores an array of schemas as params_schema for oneOf' do
+      controller = Class.new do
+        include OrcaOpenAPI::Controller
+
+        typed_action :create,
+                     summary: 'Create',
+                     params: [ControllerTestFixtures::CreateRequest, ControllerTestFixtures::ErrorResponse],
+                     response: {}
+      end
+
+      expect(controller.typed_actions[:create].params_schema).to eq(
+        [ControllerTestFixtures::CreateRequest, ControllerTestFixtures::ErrorResponse]
+      )
+    end
+
     it 'stores response_schemas by status code' do
       controller = Class.new do
         include OrcaOpenAPI::Controller

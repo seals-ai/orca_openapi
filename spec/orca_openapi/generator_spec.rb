@@ -94,6 +94,29 @@ module GeneratorTestFixtures
 
     typed_action :noop, summary: 'No-op', response: {}
   end
+
+  # -- Fixtures for array params (oneOf) --
+
+  class VariantA < T::Struct
+    const :a_id, String, description: 'Variant A ID'
+  end
+
+  class VariantB < T::Struct
+    const :b_id, String, description: 'Variant B ID'
+  end
+
+  class ArrayParamsResponse < T::Struct
+    const :ok, T::Boolean
+  end
+
+  class ArrayParamsController
+    include OrcaOpenAPI::Controller
+
+    typed_action :create,
+                 summary: 'Create with oneOf',
+                 params: [VariantA, VariantB],
+                 response: { 200 => ArrayParamsResponse }
+  end
 end
 
 RSpec.describe OrcaOpenAPI::Generator do
@@ -416,6 +439,59 @@ RSpec.describe OrcaOpenAPI::Generator do
         limited_spec = gen.generate
 
         expect(limited_spec['paths']).not_to have_key('/orders/{id}')
+      end
+    end
+
+    describe 'array params (oneOf)' do
+      let(:oneof_config) do
+        OrcaOpenAPI::Configuration.new.tap do |c|
+          c.title = 'OneOf API'
+          c.version = '1.0.0'
+          c.server_url = 'https://api.test.com'
+          c.register_controller(GeneratorTestFixtures::ArrayParamsController)
+        end
+      end
+
+      let(:oneof_routes) do
+        [
+          { controller: 'generator_test_fixtures/array_params', action: :create,
+            path: '/things', method: 'post', path_params: [] }
+        ]
+      end
+
+      let(:oneof_spec) do
+        described_class.new(configuration: oneof_config, routes: oneof_routes).generate
+      end
+
+      let(:operation) { oneof_spec['paths']['/things']['post'] }
+
+      it 'produces inline oneOf in requestBody schema' do
+        schema = operation['requestBody']['content']['application/json']['schema']
+        expect(schema).to have_key('oneOf')
+        expect(schema['oneOf'].length).to eq(2)
+      end
+
+      it 'references each variant via $ref' do
+        refs = operation['requestBody']['content']['application/json']['schema']['oneOf']
+        expect(refs).to eq([
+                             { '$ref' => "#/components/schemas/#{GeneratorTestFixtures::VariantA.openapi_name}" },
+                             { '$ref' => "#/components/schemas/#{GeneratorTestFixtures::VariantB.openapi_name}" }
+                           ])
+      end
+
+      it 'includes variant schemas in components' do
+        schemas = oneof_spec['components']['schemas']
+        expect(schemas).to have_key(GeneratorTestFixtures::VariantA.openapi_name)
+        expect(schemas).to have_key(GeneratorTestFixtures::VariantB.openapi_name)
+      end
+
+      it 'does not include a synthetic wrapper schema' do
+        schemas = oneof_spec['components']['schemas']
+        expect(schemas.keys).to contain_exactly(
+          GeneratorTestFixtures::VariantA.openapi_name,
+          GeneratorTestFixtures::VariantB.openapi_name,
+          GeneratorTestFixtures::ArrayParamsResponse.openapi_name
+        )
       end
     end
   end

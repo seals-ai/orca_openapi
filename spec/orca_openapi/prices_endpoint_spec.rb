@@ -9,7 +9,7 @@ require 'spec_helper'
 # -------------------------------------------------------------------
 
 module PricesEndpointFixtures
-  # -- Request schemas (oneOf pattern) --
+  # -- Request schemas (oneOf pattern via array) --
 
   class PricesByCustomer < T::Struct
     const :customer_id, String, description: 'Customer UUID', format: 'uuid'
@@ -24,28 +24,6 @@ module PricesEndpointFixtures
   class PricesByPerson < T::Struct
     const :person_id, String, description: 'Person UUID', format: 'uuid'
     const :product_ids, T::Array[String], description: 'Product UUIDs'
-  end
-
-  # Wrapper that aggregates the three variants into oneOf.
-  # Defines a custom to_openapi_schema for the oneOf envelope.
-  # In a future version, the gem could support a `one_of` DSL directly.
-  class PricesRequest < T::Struct
-    class << self
-      def to_openapi_schema
-        {
-          oneOf: [
-            { '$ref' => "#/components/schemas/#{PricesByCustomer.openapi_name}" },
-            { '$ref' => "#/components/schemas/#{PricesByOrganization.openapi_name}" },
-            { '$ref' => "#/components/schemas/#{PricesByPerson.openapi_name}" }
-          ]
-        }
-      end
-
-      # Expose the variant classes so the generator can collect them.
-      def variant_schemas
-        [PricesByCustomer, PricesByOrganization, PricesByPerson]
-      end
-    end
   end
 
   # -- Response schemas --
@@ -70,7 +48,7 @@ module PricesEndpointFixtures
     const :error, String, description: 'Error message'
   end
 
-  # -- Controller --
+  # -- Controller (uses array params for oneOf) --
 
   class PricesController
     include OrcaOpenAPI::Controller
@@ -80,7 +58,7 @@ module PricesEndpointFixtures
 
     typed_action :create,
                  summary: 'Ensure sync and return customer product prices',
-                 params: PricesRequest,
+                 params: [PricesByCustomer, PricesByOrganization, PricesByPerson],
                  headers: {
                    'X-Company-Id' => {
                      type: :string,
@@ -179,11 +157,15 @@ RSpec.describe 'Prices endpoint end-to-end' do
         expect(request_body['required']).to be true
       end
 
-      it 'references the PricesRequest schema' do
-        ref = request_body['content']['application/json']['schema']['$ref']
-        expect(ref).to eq(
-          "#/components/schemas/#{PricesEndpointFixtures::PricesRequest.openapi_name}"
-        )
+      it 'uses inline oneOf with $ref to each variant' do
+        schema = request_body['content']['application/json']['schema']
+        expect(schema).to have_key('oneOf')
+        refs = schema['oneOf'].map { |o| o['$ref'] }
+        expect(refs).to eq([
+                             "#/components/schemas/#{PricesEndpointFixtures::PricesByCustomer.openapi_name}",
+                             "#/components/schemas/#{PricesEndpointFixtures::PricesByOrganization.openapi_name}",
+                             "#/components/schemas/#{PricesEndpointFixtures::PricesByPerson.openapi_name}"
+                           ])
       end
     end
 
@@ -225,10 +207,8 @@ RSpec.describe 'Prices endpoint end-to-end' do
   describe 'components' do
     let(:schemas) { spec['components']['schemas'] }
 
-    it 'includes the PricesRequest schema with oneOf' do
-      request_schema = schemas[PricesEndpointFixtures::PricesRequest.openapi_name]
-      expect(request_schema).to have_key(:oneOf)
-      expect(request_schema[:oneOf].length).to eq(3)
+    it 'does not include a wrapper PricesRequest schema (oneOf is inline)' do
+      expect(schemas.keys).not_to include(a_string_matching(/prices_request/))
     end
 
     it 'includes all three request variant schemas' do
