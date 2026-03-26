@@ -7,6 +7,9 @@ module OrcaOpenAPI
   #   - Registered controllers with typed_action declarations
   #   - Route information (path + HTTP method per action)
   #
+  # Supports both plain T::Struct subclasses and those that include OrcaOpenAPI::Schema.
+  # Metadata (description, format, example) is read directly from T::Struct prop kwargs.
+  #
   # Usage:
   #   spec = OrcaOpenAPI::Generator.new.generate
   #   # => Hash representing a complete OpenAPI 3.1 document
@@ -149,7 +152,7 @@ module OrcaOpenAPI
 
       # Query parameters
       if action_meta.query_params
-        schema = action_meta.query_params.to_openapi_schema
+        schema = struct_to_openapi_schema(action_meta.query_params)
         (schema[:properties] || {}).each do |prop_name, prop_schema|
           required = (schema[:required] || []).include?(prop_name.to_s)
           params << {
@@ -181,7 +184,7 @@ module OrcaOpenAPI
         'required' => true,
         'content' => {
           'application/json' => {
-            'schema' => { '$ref' => "#/components/schemas/#{schema_class.openapi_name}" }
+            'schema' => { '$ref' => "#/components/schemas/#{openapi_name_for(schema_class)}" }
           }
         }
       }
@@ -197,7 +200,7 @@ module OrcaOpenAPI
         if schema_class
           response['content'] = {
             'application/json' => {
-              'schema' => { '$ref' => "#/components/schemas/#{schema_class.openapi_name}" }
+              'schema' => { '$ref' => "#/components/schemas/#{openapi_name_for(schema_class)}" }
             }
           }
         end
@@ -226,7 +229,7 @@ module OrcaOpenAPI
       components
     end
 
-    # Recursively collects all schema classes referenced by typed actions.
+    # BFS collects all T::Struct schema classes referenced by typed actions.
     def collect_schemas
       seen = {}
       queue = []
@@ -247,66 +250,91 @@ module OrcaOpenAPI
 
       # BFS to find all nested schemas
       while (klass = queue.shift)
-        next unless klass.respond_to?(:openapi_name)
+        next unless klass < T::Struct
 
-        name = klass.openapi_name
+        name = openapi_name_for(klass)
         next if seen.key?(name)
 
-        schema = klass.to_openapi_schema
+        schema = struct_to_openapi_schema(klass)
         seen[name] = schema
 
         # If the schema exposes variant schemas (e.g. oneOf wrappers), enqueue them
         klass.variant_schemas.each { |v| queue << v } if klass.respond_to?(:variant_schemas)
 
-        # Find nested schema references in properties
-        (schema[:properties] || {}).each_value do |prop_schema|
-          ref = extract_schema_ref(prop_schema)
-          next unless ref
-
-          # Find the class by checking items (arrays) or direct $ref
-          enqueue_nested_schemas(prop_schema, queue)
-        end
+        # Find nested T::Struct references in properties
+        enqueue_nested_structs(klass, queue)
       end
 
       seen
     end
 
-    def extract_schema_ref(prop_schema)
-      prop_schema['$ref'] || prop_schema.dig(:items, '$ref')
+    # Generates an OpenAPI 3.1 schema hash for a T::Struct class.
+    # If the class defines a custom `to_openapi_schema`, delegates to it.
+    # Otherwise, introspects T::Struct props directly and reads metadata
+    # from field_metadata (when OrcaOpenAPI::Schema is included).
+    def struct_to_openapi_schema(klass)
+      # Delegate to custom to_openapi_schema if the class defines one
+      # (e.g. oneOf wrappers that include OrcaOpenAPI::Schema)
+      return klass.to_openapi_schema if klass.respond_to?(:to_openapi_schema)
+
+      props = {}
+      required = []
+      metadata = klass.respond_to?(:field_metadata) ? klass.field_metadata : {}
+
+      klass.props.each do |prop_name, prop_info|
+        type_object = prop_info[:type_object] || prop_info[:type]
+        schema = TypeConverter.convert(type_object)
+
+        # Read metadata from field_metadata (populated by OrcaOpenAPI::Schema's const override)
+        meta = metadata[prop_name] || {}
+        schema[:description] = meta[:description] if meta[:description]
+        schema[:format] = meta[:format] if meta[:format]
+        schema[:example] = meta[:example] unless meta[:example].nil?
+
+        props[prop_name] = schema
+
+        # A field is required if it's not nilable and has no default
+        required << prop_name.to_s unless nilable_type?(type_object) || prop_info.key?(:default)
+      end
+
+      result = { type: 'object', properties: props }
+      result[:required] = required unless required.empty?
+      result
     end
 
-    def enqueue_nested_schemas(_prop_schema, queue)
-      # Check all registered controllers' schemas for matching refs
-      @config.controllers.each do |ctrl|
-        next unless ctrl.respond_to?(:typed_actions)
+    # Finds nested T::Struct references in a class's props and enqueues them.
+    def enqueue_nested_structs(klass, queue)
+      return unless klass.respond_to?(:props)
 
-        ctrl.typed_actions.each_value do |meta|
-          [meta.params_schema, meta.query_params, *meta.response_schemas.values].compact.each do |klass|
-            next unless klass.respond_to?(:openapi_name)
-            next unless klass.respond_to?(:props)
-
-            # Check if any prop type is a Schema subclass
-            klass.props.each_value do |prop_info|
-              type_obj = prop_info[:type_object] || prop_info[:type]
-              find_schema_classes(type_obj, queue)
-            end
-          end
-        end
+      klass.props.each_value do |prop_info|
+        type_obj = prop_info[:type_object] || prop_info[:type]
+        find_struct_classes(type_obj, queue)
       end
     end
 
-    def find_schema_classes(type_obj, queue)
+    def find_struct_classes(type_obj, queue)
       case type_obj
       when T::Types::TypedArray
-        find_schema_classes(type_obj.type, queue)
+        find_struct_classes(type_obj.type, queue)
       when T::Types::Simple
         klass = type_obj.raw_type
-        queue << klass if klass < OrcaOpenAPI::Schema
+        queue << klass if klass < T::Struct
       when T::Types::Union
-        type_obj.types.each { |t| find_schema_classes(t, queue) }
+        type_obj.types.each { |t| find_struct_classes(t, queue) }
       end
     rescue StandardError
       # Skip types that can't be introspected
+    end
+
+    # Derives the OpenAPI component name for a T::Struct class.
+    # Delegates to `openapi_name` if available (via OrcaOpenAPI::Schema),
+    # otherwise derives from the class name.
+    def openapi_name_for(klass)
+      if klass.respond_to?(:openapi_name)
+        klass.openapi_name
+      else
+        klass.name.gsub('::', '_').gsub(/([a-z])([A-Z])/, '\1_\2').downcase
+      end
     end
 
     # Finds the route for a given controller + action.
@@ -384,6 +412,12 @@ module OrcaOpenAPI
         500 => 'Internal server error'
       }
       descriptions.fetch(status, "Response #{status}")
+    end
+
+    def nilable_type?(type)
+      return false unless type.is_a?(T::Types::Union)
+
+      type.types.any? { |t| t.is_a?(T::Types::Simple) && t.raw_type == NilClass }
     end
 
     # Pure-Ruby equivalent of ActiveSupport's String#underscore.

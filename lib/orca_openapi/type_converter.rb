@@ -8,7 +8,7 @@ module OrcaOpenAPI
   #   - Primitive types (String, Integer, Float, T::Boolean, NilClass)
   #   - Nilable types (T.nilable(X) → oneOf with null)
   #   - Arrays (T::Array[X] → { type: "array", items: ... })
-  #   - Nested schemas (subclasses of OrcaOpenAPI::Schema → $ref)
+  #   - Nested schemas (subclasses of T::Struct → $ref)
   #   - Enums (T::Enum subclasses)
   #
   # OpenAPI 3.1 uses JSON Schema 2020-12, which supports `type: ["string", "null"]`
@@ -16,7 +16,7 @@ module OrcaOpenAPI
   module TypeConverter
     PRIMITIVE_MAP = {
       'String' => { type: 'string' },
-      'Integer' => { type: 'integer' },
+      'Integer' => { type: 'integer', format: 'int64' },
       'Float' => { type: 'number', format: 'float' },
       'Numeric' => { type: 'number' },
       'TrueClass' => { type: 'boolean' },
@@ -102,8 +102,8 @@ module OrcaOpenAPI
       end
 
       def convert_class(klass)
-        # Check for OrcaOpenAPI::Schema subclass → $ref
-        if defined?(OrcaOpenAPI::Schema) && klass < OrcaOpenAPI::Schema
+        # Any T::Struct subclass → $ref to component schema
+        if klass < T::Struct
           { '$ref' => "#/components/schemas/#{schema_name(klass)}" }
         elsif klass.respond_to?(:values) && klass < T::Enum
           convert_enum(klass)
@@ -130,9 +130,15 @@ module OrcaOpenAPI
       end
 
       # Derives an OpenAPI schema name from a class.
-      # Llm::V1::Products::PricesResponse → "llm_v1_products_prices_response"
+      # Delegates to `openapi_name` if available (e.g. via OrcaOpenAPI::Schema),
+      # otherwise derives from the class name.
+      #   Llm::V1::Products::PricesResponse → "llm_v1_products_prices_response"
       def schema_name(klass)
-        klass.name.gsub('::', '_').gsub(/([a-z])([A-Z])/, '\1_\2').downcase
+        if klass.respond_to?(:openapi_name)
+          klass.openapi_name
+        else
+          klass.name.gsub('::', '_').gsub(/([a-z])([A-Z])/, '\1_\2').downcase
+        end
       end
     end
   end

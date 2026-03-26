@@ -24,6 +24,11 @@ module TypeConverterTestFixtures
     const :value, String
   end
 
+  # Plain T::Struct without OrcaOpenAPI::Schema — should also get $ref
+  class PlainStruct < T::Struct
+    const :name, String
+  end
+
   class Status < T::Enum
     enums do
       Active = new('active')
@@ -40,8 +45,8 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
         expect(described_class.convert(String)).to eq(type: 'string')
       end
 
-      it 'converts Integer' do
-        expect(described_class.convert(Integer)).to eq(type: 'integer')
+      it 'converts Integer with int64 format' do
+        expect(described_class.convert(Integer)).to eq(type: 'integer', format: 'int64')
       end
 
       it 'converts Float' do
@@ -87,7 +92,7 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
       end
 
       it 'unwraps Simple(Integer)' do
-        expect(described_class.convert(T::Utils.coerce(Integer))).to eq(type: 'integer')
+        expect(described_class.convert(T::Utils.coerce(Integer))).to eq(type: 'integer', format: 'int64')
       end
     end
 
@@ -109,11 +114,12 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
         expect(result[:type]).to eq(%w[string null])
       end
 
-      it 'converts T.nilable(Integer) to type array with null' do
+      it 'converts T.nilable(Integer) to type array with null and int64 format' do
         type = T::Utils.coerce(T.nilable(Integer))
         result = described_class.convert(type)
 
         expect(result[:type]).to eq(%w[integer null])
+        expect(result[:format]).to eq('int64')
       end
 
       it 'converts T.nilable(Float) preserving format' do
@@ -137,7 +143,7 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
         type = T::Utils.coerce(T::Array[Integer])
         result = described_class.convert(type)
 
-        expect(result).to eq(type: 'array', items: { type: 'integer' })
+        expect(result).to eq(type: 'array', items: { type: 'integer', format: 'int64' })
       end
 
       it 'converts nested arrays T::Array[T::Array[String]]' do
@@ -158,7 +164,7 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
 
         expect(result).to eq(
           type: 'object',
-          additionalProperties: { type: 'integer' }
+          additionalProperties: { type: 'integer', format: 'int64' }
         )
       end
     end
@@ -170,7 +176,7 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
 
         expect(result[:oneOf]).to contain_exactly(
           { type: 'string' },
-          { type: 'integer' }
+          { type: 'integer', format: 'int64' }
         )
       end
     end
@@ -184,12 +190,22 @@ RSpec.describe OrcaOpenAPI::TypeConverter do
       end
     end
 
-    context 'with OrcaOpenAPI::Schema classes' do
+    context 'with T::Struct classes (with OrcaOpenAPI::Schema)' do
       it 'returns a $ref to the schema component' do
         result = described_class.convert(TypeConverterTestFixtures::SimpleSchema)
 
         expect(result).to eq(
           '$ref' => '#/components/schemas/type_converter_test_fixtures_simple_schema'
+        )
+      end
+    end
+
+    context 'with plain T::Struct classes (without OrcaOpenAPI::Schema)' do
+      it 'returns a $ref to the schema component' do
+        result = described_class.convert(TypeConverterTestFixtures::PlainStruct)
+
+        expect(result).to eq(
+          '$ref' => '#/components/schemas/type_converter_test_fixtures_plain_struct'
         )
       end
     end
