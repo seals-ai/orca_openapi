@@ -1,0 +1,3 @@
+module OrcaOpenAPI
+  VERSION: String
+end
