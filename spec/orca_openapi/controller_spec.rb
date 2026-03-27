@@ -438,4 +438,121 @@ RSpec.describe OrcaOpenAPI::Controller do
       expect(controller_b.security).to eq(:api_key)
     end
   end
+
+  describe '#typed_params' do
+    # Build a minimal controller instance that simulates the Rails request contract.
+    def build_instance(controller_class, action:, body:)
+      instance = controller_class.allocate
+
+      # Stub action_name (Rails provides this)
+      allow(instance).to receive(:action_name).and_return(action.to_s)
+
+      # Stub request.raw_post (Rails provides this)
+      mock_request = double('request', raw_post: body)
+      allow(instance).to receive(:request).and_return(mock_request)
+
+      instance
+    end
+
+    let(:controller_class) do
+      Class.new do
+        include OrcaOpenAPI::Controller
+
+        typed_action :create,
+                     summary: 'Create an item',
+                     params: ControllerTestFixtures::CreateRequest,
+                     response: { 200 => ControllerTestFixtures::CreateResponse }
+
+        typed_action :index,
+                     summary: 'List items',
+                     response: { 200 => ControllerTestFixtures::IndexResponse }
+      end
+    end
+
+    it 'returns a validated struct instance for valid JSON' do
+      body = '{"name":"Widget","quantity":5}'
+      instance = build_instance(controller_class, action: :create, body:)
+
+      result = instance.typed_params
+
+      expect(result).to be_a(ControllerTestFixtures::CreateRequest)
+      expect(result.name).to eq('Widget')
+      expect(result.quantity).to eq(5)
+    end
+
+    it 'memoizes the result across multiple calls' do
+      body = '{"name":"Widget","quantity":5}'
+      instance = build_instance(controller_class, action: :create, body:)
+
+      first = instance.typed_params
+      second = instance.typed_params
+
+      expect(first).to equal(second) # same object identity
+    end
+
+    it 'raises ValidationError for malformed JSON' do
+      instance = build_instance(controller_class, action: :create, body: '{bad json}')
+
+      expect { instance.typed_params }.to raise_error(
+        OrcaOpenAPI::ValidationError, /Invalid JSON/
+      )
+    end
+
+    it 'raises ValidationError for empty body' do
+      instance = build_instance(controller_class, action: :create, body: '')
+
+      expect { instance.typed_params }.to raise_error(
+        OrcaOpenAPI::ValidationError, /Request body is empty/
+      )
+    end
+
+    it 'raises ValidationError when required field is missing' do
+      body = '{"name":"Widget"}'
+      instance = build_instance(controller_class, action: :create, body:)
+
+      expect { instance.typed_params }.to raise_error(
+        OrcaOpenAPI::ValidationError, /Invalid request body/
+      )
+    end
+
+    it 'raises RuntimeError when action has no params schema' do
+      instance = build_instance(controller_class, action: :index, body: '{}')
+
+      expect { instance.typed_params }.to raise_error(
+        RuntimeError, /No params schema declared for action 'index'/
+      )
+    end
+
+    context 'with array params (oneOf)' do
+      let(:oneof_controller) do
+        Class.new do
+          include OrcaOpenAPI::Controller
+
+          typed_action :create,
+                       summary: 'Create',
+                       params: [ControllerTestFixtures::CreateRequest, ControllerTestFixtures::ErrorResponse],
+                       response: {}
+        end
+      end
+
+      it 'matches the correct variant' do
+        body = '{"error":"something went wrong"}'
+        instance = build_instance(oneof_controller, action: :create, body:)
+
+        result = instance.typed_params
+
+        expect(result).to be_a(ControllerTestFixtures::ErrorResponse)
+        expect(result.error).to eq('something went wrong')
+      end
+
+      it 'raises ValidationError when no variant matches' do
+        body = '{"unrelated":"field"}'
+        instance = build_instance(oneof_controller, action: :create, body:)
+
+        expect { instance.typed_params }.to raise_error(
+          OrcaOpenAPI::ValidationError, /does not match any accepted format/
+        )
+      end
+    end
+  end
 end

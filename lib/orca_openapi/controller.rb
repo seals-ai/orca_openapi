@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 # typed: strict
 
+require 'json'
+
 module OrcaOpenAPI
   # Mixin for Rails controllers to declare typed API actions.
   #
@@ -28,6 +30,61 @@ module OrcaOpenAPI
       # Auto-register the controller with the global configuration so it
       # appears in the generated spec without manual register_controller calls.
       OrcaOpenAPI.configuration.register_controller(base) if OrcaOpenAPI.configured?
+
+      # Auto-rescue ValidationError → 422 JSON response.
+      # Only applied when the base class supports rescue_from (i.e., Rails controllers).
+      return unless base.respond_to?(:rescue_from)
+
+      base.rescue_from(OrcaOpenAPI::ValidationError) do |error|
+        body = { error: error.message }
+        body[:details] = error.details if error.details
+        render json: body, status: :unprocessable_entity
+      end
+    end
+
+    # Returns the validated T::Struct instance for the current action's request body.
+    #
+    # Parses the raw JSON request body and validates it against the params schema
+    # declared in `typed_action`. For oneOf (array params), tries each variant in
+    # order and returns the first match.
+    #
+    # The result is memoized — multiple calls return the same struct instance.
+    #
+    # @return [T::Struct] Validated struct instance
+    # @raise [OrcaOpenAPI::ValidationError] When the body is invalid JSON or fails schema validation
+    # @raise [RuntimeError] When called on an action without a params schema
+    #
+    # @example
+    #   def create
+    #     req = typed_params  # => #<PricesByCustomer customer_id="..." product_ids=[...]>
+    #     result = SomeService.call(customer_id: req.customer_id, product_ids: req.product_ids)
+    #   end
+    #
+    def typed_params
+      @_typed_params ||= begin
+        action = action_name.to_sym
+        action_meta = self.class.typed_actions[action]
+        schema = action_meta&.params_schema
+
+        raise "No params schema declared for action '#{action}'" unless schema
+
+        body_hash = parse_request_body
+        ParamValidator.call(body_hash, schema)
+      end
+    end
+
+    private
+
+    # Parses the raw request body as JSON with symbolized keys.
+    # @return [Hash{Symbol => Object}]
+    # @raise [OrcaOpenAPI::ValidationError] On malformed JSON or empty body
+    def parse_request_body
+      raw = request.raw_post
+      raise ValidationError.new('Request body is empty') if raw.nil? || raw.strip.empty?
+
+      JSON.parse(raw, symbolize_names: true)
+    rescue JSON::ParserError => e
+      raise ValidationError.new("Invalid JSON: #{e.message}")
     end
 
     # Stores metadata for a single typed action.

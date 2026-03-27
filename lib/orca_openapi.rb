@@ -5,6 +5,8 @@ require 'sorbet-runtime'
 
 require_relative 'orca_openapi/version'
 require_relative 'orca_openapi/struct_extension'
+require_relative 'orca_openapi/validation_error'
+require_relative 'orca_openapi/param_validator'
 require_relative 'orca_openapi/type_converter'
 require_relative 'orca_openapi/controller'
 require_relative 'orca_openapi/configuration'
